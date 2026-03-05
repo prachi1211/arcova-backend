@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin } from '../config/supabase.js';
 import { env } from '../config/env.js';
 import { Errors } from '../utils/errors.js';
@@ -7,8 +7,8 @@ import { buildSystemPrompt, parseTripPlan, extractPreferences } from './tripPlan
 import type { Response } from 'express';
 import type { Conversation, ConversationMessage, TripPlan } from '../types/index.js';
 
-const anthropicClient = env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+const geminiClient = env.GEMINI_API_KEY
+  ? new GoogleGenerativeAI(env.GEMINI_API_KEY)
   : null;
 
 function sendSSE(res: Response, type: string, data: unknown) {
@@ -67,73 +67,77 @@ export async function sendMessage(
     return;
   }
 
-  // Append user message
-  const messages: ConversationMessage[] = [
-    ...(conversation.messages as ConversationMessage[]),
+  // All previous messages from DB
+  const previousMessages: ConversationMessage[] = conversation.messages as ConversationMessage[];
+
+  // Full message list including the new user message (used for preference extraction + saving)
+  const allMessages: ConversationMessage[] = [
+    ...previousMessages,
     { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
   ];
 
-  // Graceful degradation if no API key
-  if (!anthropicClient) {
-    const fallback = "I'm Arcova's travel assistant. AI features require an Anthropic API key to be configured. Please contact the administrator to enable AI-powered trip planning.";
+  // Graceful degradation — no API key configured
+  if (!geminiClient) {
+    const fallback = "I'm Arcova's travel assistant, but AI features aren't enabled yet. Please contact the administrator to configure the Gemini API key.";
     sendSSE(res, 'token', { content: fallback });
 
     const updatedMessages: ConversationMessage[] = [
-      ...messages,
+      ...allMessages,
       { role: 'assistant', content: fallback, timestamp: new Date().toISOString() },
     ];
-    const { error: saveError } = await supabaseAdmin
+    await supabaseAdmin
       .from('conversations')
       .update({ messages: updatedMessages, updated_at: new Date().toISOString() })
       .eq('id', conversation.id);
-
-    if (saveError) console.error('Failed to save conversation:', saveError.message);
 
     sendSSE(res, 'done', {});
     res.end();
     return;
   }
 
-  // Extract preferences from conversation history
-  const preferences = extractPreferences(messages);
+  // Extract user preferences from conversation history
+  const preferences = extractPreferences(allMessages);
 
-  // Build system prompt
-  const systemPrompt = buildSystemPrompt(messages, preferences);
-
-  // Build Claude messages (only user/assistant, not system)
-  const claudeMessages = messages.map((m) => ({
-    role: m.role as 'user' | 'assistant',
-    content: m.content,
-  }));
+  // Build system prompt with hotel context
+  const systemPrompt = buildSystemPrompt(allMessages, preferences);
 
   try {
-    // Stream response from Claude
+    const model = geminiClient.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      systemInstruction: systemPrompt,
+    });
+
+    // Convert previous messages to Gemini history format.
+    // Gemini uses 'user' and 'model' roles (not 'assistant').
+    // The history excludes the current user message — that is sent via sendMessageStream.
+    const history = previousMessages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessageStream(userMessage);
+
     let fullResponse = '';
 
-    const stream = anthropicClient.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: claudeMessages,
-    });
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        fullResponse += text;
+        sendSSE(res, 'token', { content: text });
+      }
+    }
 
-    stream.on('text', (text) => {
-      fullResponse += text;
-      sendSSE(res, 'token', { content: text });
-    });
-
-    await stream.finalMessage();
-
-    // Parse for trip plan
+    // Parse the full response for a structured trip plan JSON block
     const tripPlan: TripPlan | null = parseTripPlan(fullResponse);
 
-    // Save conversation + trip plan
+    // Persist conversation + detected trip plan
     const updatedMessages: ConversationMessage[] = [
-      ...messages,
+      ...allMessages,
       { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() },
     ];
 
-    const { error: updateError } = await supabaseAdmin
+    await supabaseAdmin
       .from('conversations')
       .update({
         messages: updatedMessages,
@@ -143,9 +147,7 @@ export async function sendMessage(
       })
       .eq('id', conversation.id);
 
-    if (updateError) console.error('Failed to save conversation:', updateError.message);
-
-    // Send trip plan event if found
+    // Send trip plan as a separate SSE event so the frontend can render it
     if (tripPlan) {
       sendSSE(res, 'trip_plan', { plan: tripPlan });
     }
@@ -156,7 +158,6 @@ export async function sendMessage(
     if (!res.headersSent) {
       throw err;
     }
-    // Headers already sent — send error via SSE
     const message = err instanceof Error ? err.message : 'Stream error';
     sendSSE(res, 'error', { content: message });
     sendSSE(res, 'done', {});
