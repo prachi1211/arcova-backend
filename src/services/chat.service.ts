@@ -103,7 +103,7 @@ export async function sendMessage(
 
   try {
     const model = geminiClient.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash-8b',
       systemInstruction: systemPrompt,
     });
 
