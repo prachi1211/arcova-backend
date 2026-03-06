@@ -733,15 +733,49 @@ class MockAuth {
   }
 
   async getUser(token: string) {
-    if (!token?.startsWith('mock::')) {
+    // Mock token issued by mock signIn / signUp
+    if (token?.startsWith('mock::')) {
+      const userId = token.slice(6); // 'mock::'.length === 6
+      const user = AUTH_USERS.get(userId);
+      if (!user) return { data: { user: null }, error: { message: 'User not found' } };
+      return { data: { user: { id: user.id, email: user.email } }, error: null };
+    }
+
+    // Real Supabase JWT — decode payload without crypto verification (safe in local mock mode)
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) throw new Error('Not a JWT');
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8')) as {
+        sub?: string;
+        email?: string;
+      };
+      const userId = payload.sub;
+      const email = payload.email ?? '';
+      if (!userId) throw new Error('No sub claim');
+
+      // Auto-create a profile in mock store for this real Supabase user if missing
+      if (!STORE.profiles.find((p) => p.id === userId)) {
+        const now = new Date().toISOString();
+        STORE.profiles.push({
+          id: userId,
+          email,
+          role: 'traveller',
+          full_name: email.split('@')[0],
+          phone: null,
+          avatar_url: null,
+          company_name: null,
+          company_verified: false,
+          preferences: {},
+          created_at: now,
+          updated_at: now,
+        });
+      }
+
+      return { data: { user: { id: userId, email } }, error: null };
+    } catch {
       return { data: { user: null }, error: { message: 'Invalid token' } };
     }
-    const userId = token.slice(6); // 'mock::'.length === 6
-    const user = AUTH_USERS.get(userId);
-    if (!user) {
-      return { data: { user: null }, error: { message: 'User not found' } };
-    }
-    return { data: { user: { id: user.id, email: user.email } }, error: null };
   }
 
   async resetPasswordForEmail(_email: string, _opts?: unknown) {

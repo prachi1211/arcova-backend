@@ -17,9 +17,10 @@ export async function createBooking(
   const checkOut = new Date(input.check_out);
   const now = new Date();
 
-  // Validate dates
-  if (checkIn < now) throw Errors.badRequest('Check-in date must be in the future');
-  if (checkOut <= checkIn) throw Errors.badRequest('Check-out must be after check-in');
+  // Validate dates — compare date strings only to avoid timezone/time-of-day rejection for today
+  const todayStr = now.toISOString().split('T')[0];
+  if (input.check_in < todayStr) throw Errors.badRequest('Check-in date must be today or in the future');
+  if (input.check_out <= input.check_in) throw Errors.badRequest('Check-out must be after check-in');
 
   // Fetch room type and verify it belongs to the property
   const { data: roomType, error: rtError } = await supabaseAdmin

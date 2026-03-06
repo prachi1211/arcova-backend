@@ -166,6 +166,7 @@ export async function getHotelDetail(
   propertyId: string,
 ): Promise<{
   property: HotelSearchResult;
+  description: string;
   roomTypes: { id: string; name: string; maxGuests: number; pricePerNight: number; amenities: string[] }[];
   availability: { date: string; availableRooms: number; rate: number }[];
 }> {
@@ -193,7 +194,7 @@ export async function getHotelDetail(
       });
     }
 
-    return { property: hotel, roomTypes, availability };
+    return { property: hotel, description: hotel.name, roomTypes, availability };
   }
 
   // Internal property from Supabase
@@ -249,6 +250,7 @@ export async function getHotelDetail(
 
   return {
     property: hotelResult,
+    description: (property.description as string) ?? '',
     roomTypes: (roomTypes ?? []).map((rt) => ({
       id: rt.id,
       name: rt.name,
