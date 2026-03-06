@@ -136,7 +136,10 @@ export async function getBookings(
 ): Promise<PaginatedResponse<Booking>> {
   let query = supabaseAdmin
     .from('bookings')
-    .select('*, properties(name, city), room_types(name)', { count: 'exact' });
+    .select(
+      '*, properties(id, name, city, country, star_rating, images, amenities, status), room_types(id, name, max_guests, base_price_cents)',
+      { count: 'exact' },
+    );
 
   // Scope by role
   if (role === 'traveller') {
@@ -182,7 +185,9 @@ export async function getBooking(
 ): Promise<Booking> {
   const { data: booking, error } = await supabaseAdmin
     .from('bookings')
-    .select('*, properties(name, city), room_types(name)')
+    .select(
+      '*, properties(id, name, city, country, star_rating, images, amenities, status), room_types(id, name, max_guests, base_price_cents)',
+    )
     .eq('id', bookingId)
     .single();
 
