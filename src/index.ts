@@ -20,6 +20,7 @@ import reviewRoutes from './routes/review.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import itineraryRoutes from './routes/itinerary.routes.js';
 import * as paymentService from './services/payment.service.js';
+import * as bookingService from './services/booking.service.js';
 
 const app = express();
 
@@ -82,3 +83,15 @@ const port = Number(env.PORT);
 app.listen(port, () => {
   logger.info(`Arcova API running on port ${port} [${env.NODE_ENV}]`);
 });
+
+// 11. Auto-complete past bookings — run immediately, then every 6 hours
+async function runCompleteExpiredBookings() {
+  try {
+    const count = await bookingService.completeExpiredBookings();
+    if (count > 0) logger.info(`Auto-completed ${count} past booking(s)`);
+  } catch (err) {
+    logger.error(err, 'Failed to auto-complete past bookings');
+  }
+}
+void runCompleteExpiredBookings();
+setInterval(() => void runCompleteExpiredBookings(), 6 * 60 * 60 * 1000);

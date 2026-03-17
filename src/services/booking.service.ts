@@ -267,6 +267,18 @@ export async function cancelBooking(
   return updated as Booking;
 }
 
+export async function completeExpiredBookings(): Promise<number> {
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabaseAdmin
+    .from('bookings')
+    .update({ status: 'completed' })
+    .eq('status', 'confirmed')
+    .lt('check_out', today)
+    .select('id');
+  if (error) throw Errors.internal(error.message);
+  return (data ?? []).length;
+}
+
 export async function getBookingSummary(
   userId: string,
   role: string,
