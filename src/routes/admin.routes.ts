@@ -56,9 +56,33 @@ router.patch(
   },
 );
 
+// GET /api/admin/properties
+const listPropertiesSchema = z.object({
+  status: z.enum(['active', 'inactive', 'pending_review']).optional(),
+  page: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+router.get(
+  '/properties',
+  authMiddleware,
+  requireRole('admin'),
+  validate(listPropertiesSchema, 'query'),
+  async (req, res, next) => {
+    try {
+      const q = req.query as unknown as z.infer<typeof listPropertiesSchema>;
+      const result = await adminService.listProperties({ status: q.status, page: q.page, limit: q.limit });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // PATCH /api/admin/properties/:id/status
 const updatePropertyStatusSchema = z.object({
   status: z.enum(['active', 'inactive', 'pending_review']),
+  rejection_reason: z.string().optional(),
 });
 
 router.patch(
@@ -68,13 +92,50 @@ router.patch(
   validate(updatePropertyStatusSchema),
   async (req, res, next) => {
     try {
-      const property = await adminService.updatePropertyStatus(req.params.id as string, req.body.status);
+      const property = await adminService.updatePropertyStatus(
+        req.params.id as string,
+        req.body.status,
+        req.body.rejection_reason,
+      );
       res.json(property);
     } catch (err) {
       next(err);
     }
   },
 );
+
+// GET /api/admin/bookings
+const listBookingsSchema = z.object({
+  status: z.enum(['confirmed', 'cancelled', 'completed', 'no_show']).optional(),
+  page: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+router.get(
+  '/bookings',
+  authMiddleware,
+  requireRole('admin'),
+  validate(listBookingsSchema, 'query'),
+  async (req, res, next) => {
+    try {
+      const q = req.query as unknown as z.infer<typeof listBookingsSchema>;
+      const result = await adminService.listAllBookings({ status: q.status, page: q.page, limit: q.limit });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// GET /api/admin/stats
+router.get('/stats', authMiddleware, requireRole('admin'), async (_req, res, next) => {
+  try {
+    const stats = await adminService.getPlatformStats();
+    res.json(stats);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/admin/reports/revenue
 const reportSchema = z.object({

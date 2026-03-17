@@ -2,6 +2,46 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { Errors } from '../utils/errors.js';
 import type { Profile, Property, PaginatedResponse, PropertyStatus } from '../types/index.js';
 
+// ─── Admin-specific shapes ────────────────────────────────────────────────────
+
+export interface AdminProperty {
+  id: string;
+  name: string;
+  city: string;
+  country: string;
+  status: PropertyStatus;
+  star_rating: number | null;
+  total_rooms: number;
+  rejection_reason: string | null;
+  created_at: string;
+  host: { id: string; full_name: string | null; email: string } | null;
+}
+
+export interface AdminBooking {
+  id: string;
+  check_in: string;
+  check_out: string;
+  nights: number;
+  total_price_cents: number;
+  status: string;
+  booked_at: string;
+  traveller: { id: string; full_name: string | null; email: string } | null;
+  property: { id: string; name: string; city: string } | null;
+}
+
+export interface PlatformStats {
+  totalUsers: number;
+  totalHosts: number;
+  totalTravellers: number;
+  totalProperties: number;
+  pendingProperties: number;
+  activeProperties: number;
+  inactiveProperties: number;
+  totalBookings: number;
+  confirmedBookings: number;
+  totalRevenueCents: number;
+}
+
 export async function listUsers(
   params: { role?: string; search?: string; page: number; limit: number },
 ): Promise<PaginatedResponse<Profile>> {
@@ -50,16 +90,144 @@ export async function updateUserRole(
 export async function updatePropertyStatus(
   propertyId: string,
   status: PropertyStatus,
+  rejectionReason?: string,
 ): Promise<Property> {
+  const update: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+  // Store reason when rejecting (inactive), clear it when approving
+  if (status === 'inactive') {
+    update.rejection_reason = rejectionReason ?? null;
+  } else if (status === 'active') {
+    update.rejection_reason = null;
+  }
+
   const { data, error } = await supabaseAdmin
     .from('properties')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update(update)
     .eq('id', propertyId)
     .select()
     .single();
 
   if (error || !data) throw Errors.notFound('Property');
   return data as Property;
+}
+
+export async function listProperties(
+  params: { status?: string; page: number; limit: number },
+): Promise<PaginatedResponse<AdminProperty>> {
+  let query = supabaseAdmin
+    .from('properties')
+    .select('id, name, city, country, status, star_rating, total_rooms, rejection_reason, created_at, host_id, profiles!properties_host_id_fkey(id, full_name, email)', { count: 'exact' });
+
+  if (params.status) query = query.eq('status', params.status);
+
+  query = query
+    .order('created_at', { ascending: false })
+    .range(params.page * params.limit, (params.page + 1) * params.limit - 1);
+
+  const { data, count, error } = await query;
+  if (error) throw Errors.internal(error.message);
+
+  const results: AdminProperty[] = (data ?? []).map((row) => {
+    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    return {
+      id: row.id,
+      name: row.name,
+      city: row.city,
+      country: row.country,
+      status: row.status,
+      star_rating: row.star_rating,
+      total_rooms: row.total_rooms,
+      rejection_reason: row.rejection_reason ?? null,
+      created_at: row.created_at,
+      host: profile ? { id: profile.id, full_name: profile.full_name, email: profile.email } : null,
+    };
+  });
+
+  return {
+    results,
+    totalCount: count ?? 0,
+    page: params.page,
+    pageSize: params.limit,
+    hasNextPage: (params.page + 1) * params.limit < (count ?? 0),
+  };
+}
+
+export async function listAllBookings(
+  params: { status?: string; page: number; limit: number },
+): Promise<PaginatedResponse<AdminBooking>> {
+  let query = supabaseAdmin
+    .from('bookings')
+    .select(
+      'id, check_in, check_out, total_price_cents, status, booked_at, traveller_id, property_id, profiles!bookings_traveller_id_fkey(id, full_name, email), properties!bookings_property_id_fkey(id, name, city)',
+      { count: 'exact' },
+    );
+
+  if (params.status) query = query.eq('status', params.status);
+
+  query = query
+    .order('booked_at', { ascending: false })
+    .range(params.page * params.limit, (params.page + 1) * params.limit - 1);
+
+  const { data, count, error } = await query;
+  if (error) throw Errors.internal(error.message);
+
+  const results: AdminBooking[] = (data ?? []).map((row) => {
+    const traveller = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    const property = Array.isArray(row.properties) ? row.properties[0] : row.properties;
+    const checkIn = new Date(row.check_in);
+    const checkOut = new Date(row.check_out);
+    const nights = Math.round((checkOut.getTime() - checkIn.getTime()) / 86_400_000);
+    return {
+      id: row.id,
+      check_in: row.check_in,
+      check_out: row.check_out,
+      nights,
+      total_price_cents: row.total_price_cents,
+      status: row.status,
+      booked_at: row.booked_at,
+      traveller: traveller ? { id: traveller.id, full_name: traveller.full_name, email: traveller.email } : null,
+      property: property ? { id: property.id, name: property.name, city: property.city } : null,
+    };
+  });
+
+  return {
+    results,
+    totalCount: count ?? 0,
+    page: params.page,
+    pageSize: params.limit,
+    hasNextPage: (params.page + 1) * params.limit < (count ?? 0),
+  };
+}
+
+export async function getPlatformStats(): Promise<PlatformStats> {
+  const [usersRes, propertiesRes, bookingsRes] = await Promise.all([
+    supabaseAdmin.from('profiles').select('role', { count: 'exact' }),
+    supabaseAdmin.from('properties').select('status', { count: 'exact' }),
+    supabaseAdmin.from('bookings').select('status, total_price_cents', { count: 'exact' }),
+  ]);
+
+  if (usersRes.error) throw Errors.internal(usersRes.error.message);
+  if (propertiesRes.error) throw Errors.internal(propertiesRes.error.message);
+  if (bookingsRes.error) throw Errors.internal(bookingsRes.error.message);
+
+  const users = usersRes.data ?? [];
+  const properties = propertiesRes.data ?? [];
+  const bookings = bookingsRes.data ?? [];
+
+  return {
+    totalUsers: users.length,
+    totalHosts: users.filter((u) => u.role === 'host').length,
+    totalTravellers: users.filter((u) => u.role === 'traveller').length,
+    totalProperties: properties.length,
+    pendingProperties: properties.filter((p) => p.status === 'pending_review').length,
+    activeProperties: properties.filter((p) => p.status === 'active').length,
+    inactiveProperties: properties.filter((p) => p.status === 'inactive').length,
+    totalBookings: bookings.length,
+    confirmedBookings: bookings.filter((b) => b.status === 'confirmed').length,
+    totalRevenueCents: bookings
+      .filter((b) => b.status !== 'cancelled')
+      .reduce((s, b) => s + (b.total_price_cents ?? 0), 0),
+  };
 }
 
 export async function getRevenueReport(

@@ -17,7 +17,14 @@ export async function signUp(
   if (error) throw Errors.badRequest(error.message);
   if (!data.user) throw Errors.internal('User creation failed');
 
-  // Fetch the auto-created profile (trigger creates it on auth.users insert)
+  // The DB trigger always inserts role='traveller'. Override it immediately.
+  const { error: roleError } = await supabaseAdmin
+    .from('profiles')
+    .update({ role, full_name: fullName, updated_at: new Date().toISOString() })
+    .eq('id', data.user.id);
+
+  if (roleError) throw Errors.internal(`Failed to set profile role: ${roleError.message}`);
+
   const profile = await getProfile(data.user.id);
 
   return {

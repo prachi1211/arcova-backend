@@ -88,7 +88,7 @@ export async function createProperty(
       amenities: input.amenities ?? [],
       images: input.images ?? [],
       total_rooms: input.total_rooms ?? 1,
-      status: 'active',
+      status: 'pending_review',
     })
     .select()
     .single();
