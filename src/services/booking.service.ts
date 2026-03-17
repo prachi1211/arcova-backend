@@ -225,11 +225,11 @@ export async function cancelBooking(
   if (error || !booking) throw Errors.notFound('Booking');
   if (booking.status !== 'confirmed') throw Errors.badRequest('Only confirmed bookings can be cancelled');
 
-  // Check if check-in is within 24 hours
+  // Policy: free cancellation up to 48 hours before check-in
   const checkIn = new Date(booking.check_in);
   const hoursUntilCheckIn = (checkIn.getTime() - Date.now()) / (1000 * 60 * 60);
-  if (hoursUntilCheckIn < 24) {
-    throw Errors.badRequest('Cannot cancel within 24 hours of check-in');
+  if (hoursUntilCheckIn < 48) {
+    throw Errors.badRequest('Cannot cancel within 48 hours of check-in');
   }
 
   const { data: updated, error: updateError } = await supabaseAdmin
