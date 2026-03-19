@@ -84,6 +84,21 @@ router.get(
   },
 );
 
+// GET /api/bookings/traveller-stats — must be before /:id
+router.get(
+  '/traveller-stats',
+  authMiddleware,
+  requireRole('traveller'),
+  async (req, res, next) => {
+    try {
+      const result = await bookingService.getTravellerStats(req.user!.id);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /api/bookings/:id
 router.get('/:id', authMiddleware, async (req, res, next) => {
   try {
