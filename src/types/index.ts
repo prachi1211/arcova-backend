@@ -368,6 +368,33 @@ export interface CreateItineraryItemInput {
 }
 
 // ============================================================
+// SUPPORT TICKETS
+// ============================================================
+
+export type SupportTicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type SupportTicketPriority = 'low' | 'medium' | 'high';
+
+export interface SupportTicket {
+  id: string;
+  user_id: string;
+  user_role: 'traveller' | 'host';
+  subject: string;
+  message: string;
+  status: SupportTicketStatus;
+  priority: SupportTicketPriority;
+  admin_notes: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportTicketInput {
+  subject: string;
+  message: string;
+  priority?: SupportTicketPriority;
+}
+
+// ============================================================
 // GENERIC RESPONSE TYPES
 // ============================================================
 
