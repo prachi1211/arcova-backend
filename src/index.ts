@@ -19,6 +19,7 @@ import adminRoutes from './routes/admin.routes.js';
 import reviewRoutes from './routes/review.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import itineraryRoutes from './routes/itinerary.routes.js';
+import supportRoutes from './routes/support.routes.js';
 import * as paymentService from './services/payment.service.js';
 import * as bookingService from './services/booking.service.js';
 
@@ -74,6 +75,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/itineraries', itineraryRoutes);
+app.use('/api/support', supportRoutes);
 
 // 9. Global error handler — must be last
 app.use(errorHandler);

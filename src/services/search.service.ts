@@ -231,6 +231,19 @@ export async function getHotelDetail(
     ? (roomTypes ?? []).reduce((min, rt) => rt.base_price_cents < min.base_price_cents ? rt : min, roomTypes![0])
     : null;
 
+  // Compute per-room-type minimum available rooms from availability table
+  // Falls back to total_inventory if no availability rows exist for a room type
+  const availByRoomType = new Map<string, number>();
+  for (const rt of roomTypes ?? []) {
+    const rows = (avail ?? []).filter((a) => a.room_type_id === rt.id && !a.is_closed);
+    const minAvail = rows.length > 0
+      ? Math.min(...rows.map((a) => a.available_rooms))
+      : rt.total_inventory;
+    availByRoomType.set(rt.id, Math.max(0, minAvail));
+  }
+
+  const totalAvailableRooms = [...availByRoomType.values()].reduce((sum, n) => sum + n, 0);
+
   const hotelResult: HotelSearchResult = {
     id: property.id,
     name: property.name,
@@ -243,7 +256,7 @@ export async function getHotelDetail(
     },
     amenities: property.amenities ?? [],
     images: property.images ?? [],
-    availableRooms: (roomTypes ?? []).reduce((sum, rt) => sum + rt.total_inventory, 0),
+    availableRooms: totalAvailableRooms,
     source: 'internal',
     cancellationPolicy: 'free',
   };
@@ -257,6 +270,7 @@ export async function getHotelDetail(
       maxGuests: rt.max_guests,
       pricePerNight: rt.base_price_cents / 100,
       amenities: rt.amenities ?? [],
+      availableRooms: availByRoomType.get(rt.id) ?? rt.total_inventory,
     })),
     availability: (avail ?? []).map((a) => ({
       date: a.date,
