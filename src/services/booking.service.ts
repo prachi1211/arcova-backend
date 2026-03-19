@@ -267,6 +267,26 @@ export async function cancelBooking(
   return updated as Booking;
 }
 
+export async function getTravellerStats(
+  travellerId: string,
+): Promise<{ upcoming: number; total: number; spent: number }> {
+  const { data, count, error } = await supabaseAdmin
+    .from('bookings')
+    .select('status, total_price_cents', { count: 'exact' })
+    .eq('traveller_id', travellerId);
+
+  if (error) throw Errors.internal(error.message);
+
+  const rows = data ?? [];
+  const upcoming = rows.filter((b) => b.status === 'confirmed').length;
+  const total = count ?? 0;
+  const spent = rows
+    .filter((b) => b.status !== 'cancelled')
+    .reduce((sum, b) => sum + (b.total_price_cents ?? 0), 0);
+
+  return { upcoming, total, spent };
+}
+
 export async function completeExpiredBookings(): Promise<number> {
   const today = new Date().toISOString().split('T')[0];
   const { data, error } = await supabaseAdmin
