@@ -7,12 +7,13 @@ export function hashObject(obj: Record<string, unknown>): string {
 
 export function parseDateRange(checkIn: string, checkOut: string): Date[] {
   const dates: Date[] = [];
-  const current = new Date(checkIn);
-  const end = new Date(checkOut);
+  // Parse as UTC midnight to avoid timezone-dependent date shifts
+  const current = new Date(checkIn + 'T00:00:00Z');
+  const end = new Date(checkOut + 'T00:00:00Z');
 
   while (current < end) {
     dates.push(new Date(current));
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
 
   return dates;
